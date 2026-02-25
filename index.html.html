@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#D4A017">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MineCI">
+<meta name="description" content="Cadastre Minier de Côte d'Ivoire">
+
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<title>Cadastre Minier CI</title>
+<style>
+/* ════════════════════════════════════════
+   VARIABLES & RESET
+════════════════════════════════════════ */
+:root {
+  --gold: #D4A017; --gold-l: #F5C842; --gold-dim: rgba(212,160,23,0.12);
+  --dark: #09090B; --dark2: #111113; --dark3: #18181B; --dark4: #27272A;
+  --border: rgba(212,160,23,0.18); --text: #FAFAF9; --muted: #71717A;
+  --green: #22C55E; --red: #EF4444; --blue: #3B82F6; --orange: #F97316;
+  --nav-h: 64px; --header-h: 60px; --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; overflow:hidden; background:var(--dark); color:var(--text);
+  font-family:'Space Mono', monospace; overscroll-behavior:none; }
+
+/* ════════════════════════════════════════
+   LAYOUT PRINCIPAL
+════════════════════════════════════════ */
+#app { display:flex; flex-direction:column; height:100dvh; }
+
+/* ── Header ── */
+#header {
+  height: var(--header-h);
+  background: rgba(9,9,11,0.95);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  position: relative; z-index: 100;
+  flex-shrink: 0;
+}
+.header-brand { display:flex; align-items:center; gap:10px; }
+.brand-hex {
+  width:32px; height:32px; background:var(--gold);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;
+}
+.brand-text h1 { font-family:'Syne',sans-serif; font-size:14px; font-weight:800; color:#fff; line-height:1; }
+.brand-text span { font-size:9px; color:var(--gold); letter-spacing:2px; text-transform:uppercase; }
+.header-right { display:flex; align-items:center; gap:10px; }
+.sync-btn {
+  width:36px; height:36px; border-radius:50%; border:1px solid var(--border);
+  background:var(--dark3); color:var(--gold); font-size:16px;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  transition:all 0.2s;
+}
+.sync-btn:active { transform:scale(0.9); background:var(--gold-dim); }
+.sync-btn.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.offline-badge {
+  display:none; font-size:9px; padding:3px 8px; border-radius:12px;
+  background:rgba(239,68,68,0.15); color:var(--red); border:1px solid rgba(239,68,68,0.3);
+  letter-spacing:1px;
+}
+.offline-badge.show { display:block; }
+
+/* ── Pages ── */
+#pages { flex:1; overflow:hidden; position:relative; }
+.page {
+  position:absolute; inset:0; overflow-y:auto; overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  opacity:0; transform:translateX(20px);
+  pointer-events:none; transition:opacity 0.25s, transform 0.25s;
+}
+.page.active { opacity:1; transform:translateX(0); pointer-events:all; }
+.page-content { padding:16px; padding-bottom:calc(var(--nav-h) + 16px + var(--safe-bottom)); }
+
+/* ── Navigation ── */
+#nav {
+  height: calc(var(--nav-h) + var(--safe-bottom));
+  background: rgba(9,9,11,0.97);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: flex-start;
+  padding-top: 8px; padding-bottom: var(--safe-bottom);
+  position: relative; z-index: 100;
+  flex-shrink: 0;
+}
+.nav-item {
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+  cursor:pointer; transition:all 0.2s; padding:6px 0;
+  -webkit-tap-highlight-color:transparent;
+}
+.nav-icon { font-size:20px; transition:transform 0.2s; line-height:1; }
+.nav-label { font-size:9px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; transition:color 0.2s; }
+.nav-item.active .nav-icon { transform:scale(1.15); }
+.nav-item.active .nav-label { color:var(--gold); }
+.nav-dot { width:4px; height:4px; border-radius:50%; background:var(--gold); opacity:0; transition:opacity 0.2s; margin-top:-2px; }
+.nav-item.active .nav-dot { opacity:1; }
+
+/* ════════════════════════════════════════
+   PAGE ACCUEIL
+════════════════════════════════════════ */
+.welcome-banner {
+  background: linear-gradient(135deg, rgba(212,160,23,0.1) 0%, rgba(212,160,23,0.03) 100%);
+  border: 1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px;
+  position:relative; overflow:hidden;
+}
+.welcome-banner::before {
+  content:'⬡'; position:absolute; right:-10px; top:-10px;
+  font-size:100px; opacity:0.04; color:var(--gold); line-height:1;
+}
+.welcome-title { font-family:'Syne',sans-serif; font-size:20px; font-weight:800; color:#fff; margin-bottom:4px; }
+.welcome-sub { font-size:11px; color:var(--muted); line-height:1.6; }
+.welcome-date { font-size:10px; color:var(--gold); margin-top:8px; letter-spacing:1px; }
+
+/* KPI grid mobile */
+.kpi-grid-mobile { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+.kpi-mobile {
+  background:var(--dark3); border:1px solid var(--border); border-radius:12px;
+  padding:14px; position:relative; overflow:hidden;
+  transition:transform 0.15s;
+}
+.kpi-mobile:active { transform:scale(0.97); }
+.kpi-mobile::before { content:''; position:absolute; top:0;left:0;right:0; height:2px; background:linear-gradient(90deg,var(--gold),transparent); }
+.kpi-m-icon { font-size:22px; margin-bottom:6px; }
+.kpi-m-val { font-family:'Syne',sans-serif; font-size:28px; font-weight:800; color:var(--gold-l); line-height:1; }
+.kpi-m-label { font-size:9px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+.kpi-m-delta { font-size:10px; margin-top:4px; }
+.delta-up { color:var(--green); } .delta-down { color:var(--red); }
+
+/* Alertes */
+.section-title {
+  font-size:10px; letter-spacing:3px; text-transform:uppercase; color:var(--gold);
+  margin-bottom:12px; display:flex; align-items:center; gap:10px;
+}
+.section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+.alerte-card {
+  background:var(--dark3); border:1px solid rgba(239,68,68,0.25); border-radius:12px;
+  padding:14px; margin-bottom:10px; display:flex; align-items:flex-start; gap:12px;
+  cursor:pointer; transition:all 0.2s;
+}
+.alerte-card:active { transform:scale(0.98); }
+.alerte-icon { font-size:24px; flex-shrink:0; }
+.alerte-body { flex:1; }
+.alerte-title { font-size:12px; color:#fff; font-weight:700; margin-bottom:3px; }
+.alerte-desc { font-size:11px; color:var(--muted); line-height:1.5; }
+.alerte-meta { font-size:10px; color:var(--red); margin-top:6px; }
+.alerte-badge {
+  font-size:9px; padding:2px 8px; border-radius:8px; flex-shrink:0;
+  background:rgba(239,68,68,0.15); color:var(--red); border:1px solid rgba(239,68,68,0.3);
+  align-self:center;
+}
+
+/* ════════════════════════════════════════
+   PAGE CARTE
+════════════════════════════════════════ */
+#page-carte { padding:0; }
+#map-container { position:absolute; inset:0; bottom:var(--nav-h); }
+#map { width:100%; height:100%; }
+
+/* Contrôles carte */
+#map-controls {
+  position:absolute; top:12px; left:12px; right:12px; z-index:1000;
+  display:flex; gap:8px; flex-wrap:wrap;
+}
+.map-filter-btn {
+  font-family:'Space Mono',monospace; font-size:10px; letter-spacing:1px;
+  padding:7px 12px; border-radius:20px; border:1px solid var(--border);
+  background:rgba(9,9,11,0.88); backdrop-filter:blur(12px);
+  color:var(--muted); cursor:pointer; transition:all 0.2s; white-space:nowrap;
+}
+.map-filter-btn.active { background:var(--gold); color:var(--dark); border-color:var(--gold); font-weight:700; }
+
+#map-legend {
+  position:absolute; bottom:calc(var(--nav-h) + 12px); left:12px; z-index:1000;
+  background:rgba(9,9,11,0.92); backdrop-filter:blur(16px);
+  border:1px solid var(--border); border-radius:12px; padding:12px 14px;
+}
+.legend-row { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--muted); margin-bottom:6px; }
+.legend-row:last-child { margin-bottom:0; }
+.legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+/* Leaflet overrides */
+.leaflet-control-attribution { font-size:8px !important; }
+.leaflet-popup-content-wrapper {
+  background:var(--dark3) !important; color:var(--text) !important;
+  border:1px solid var(--border) !important; border-radius:10px !important;
+  font-family:'Space Mono',monospace !important; font-size:11px !important;
+}
+.leaflet-popup-tip { background:var(--dark3) !important; }
+.leaflet-popup-close-button { color:var(--muted) !important; }
+
+/* ════════════════════════════════════════
+   PAGE STATISTIQUES
+════════════════════════════════════════ */
+.chart-card-mobile {
+  background:var(--dark3); border:1px solid var(--border); border-radius:14px;
+  padding:16px; margin-bottom:14px;
+}
+.chart-card-title { font-family:'Syne',sans-serif; font-size:13px; font-weight:700; color:#fff; margin-bottom:4px; }
+.chart-card-sub { font-size:10px; color:var(--muted); margin-bottom:14px; }
+
+/* Barres NDVI */
+.ndvi-section { margin-bottom:8px; }
+.ndvi-region { font-size:10px; color:var(--muted); margin-bottom:4px; display:flex; justify-content:space-between; }
+.ndvi-bars { display:flex; gap:4px; height:20px; border-radius:4px; overflow:hidden; }
+.ndvi-bar-2023 { flex:1; display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--dark); font-weight:700; border-radius:3px; transition:width 1s; }
+.ndvi-bar-2024 { flex:1; display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; font-weight:700; border-radius:3px; }
+
+/* ════════════════════════════════════════
+   PAGE PERMIS
+════════════════════════════════════════ */
+.search-bar {
+  background:var(--dark3); border:1px solid var(--border); border-radius:12px;
+  padding:12px 16px; width:100%; margin-bottom:12px;
+  display:flex; align-items:center; gap:10px;
+}
+.search-bar input {
+  background:none; border:none; outline:none; color:var(--text);
+  font-family:'Space Mono',monospace; font-size:12px; flex:1;
+}
+.search-bar input::placeholder { color:var(--muted); }
+
+.filter-scroll {
+  display:flex; gap:8px; overflow-x:auto; margin-bottom:14px;
+  scrollbar-width:none; padding-bottom:4px;
+}
+.filter-scroll::-webkit-scrollbar { display:none; }
+.filter-chip {
+  font-family:'Space Mono',monospace; font-size:10px; letter-spacing:1px;
+  padding:7px 14px; border-radius:20px; border:1px solid var(--border);
+  background:var(--dark3); color:var(--muted); cursor:pointer; white-space:nowrap;
+  flex-shrink:0; transition:all 0.2s;
+}
+.filter-chip.active { background:var(--gold-dim); color:var(--gold); border-color:var(--gold); }
+
+.permis-card {
+  background:var(--dark3); border:1px solid var(--border); border-radius:12px;
+  padding:14px; margin-bottom:10px; cursor:pointer; transition:all 0.2s;
+}
+.permis-card:active { transform:scale(0.98); border-color:var(--gold); }
+.permis-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+.permis-num { font-size:11px; color:var(--gold); font-weight:700; }
+.permis-badge {
+  font-size:9px; padding:3px 10px; border-radius:8px; letter-spacing:1px; text-transform:uppercase;
+}
+.badge-r { background:rgba(59,130,246,0.15); color:var(--blue); border:1px solid rgba(59,130,246,0.3); }
+.badge-e { background:rgba(212,160,23,0.15); color:var(--gold); border:1px solid rgba(212,160,23,0.3); }
+.badge-a { background:rgba(249,115,22,0.15); color:var(--orange); border:1px solid rgba(249,115,22,0.3); }
+.badge-d { background:rgba(239,68,68,0.15); color:var(--red); border:1px solid rgba(239,68,68,0.3); }
+.permis-titulaire { font-size:13px; color:#fff; margin-bottom:4px; }
+.permis-meta { font-size:10px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap; }
+.permis-delta { font-size:11px; }
+
+/* ════════════════════════════════════════
+   PAGE TÉLÉCHARGEMENT
+════════════════════════════════════════ */
+.download-card {
+  background:var(--dark3); border:1px solid var(--border); border-radius:14px;
+  padding:18px; margin-bottom:12px;
+}
+.dl-header { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+.dl-icon { font-size:32px; }
+.dl-title { font-family:'Syne',sans-serif; font-size:14px; font-weight:700; color:#fff; }
+.dl-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+.dl-info { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.dl-tag { font-size:10px; padding:3px 10px; border-radius:8px; background:var(--dark4); color:var(--muted); border:1px solid var(--border); }
+.dl-btn {
+  width:100%; padding:14px; border-radius:12px; border:none;
+  background:var(--gold); color:var(--dark); font-family:'Syne',sans-serif;
+  font-size:13px; font-weight:700; cursor:pointer; transition:all 0.2s;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.dl-btn:active { transform:scale(0.98); opacity:0.9; }
+.dl-btn.secondary {
+  background:var(--dark4); color:var(--text); border:1px solid var(--border);
+  margin-top:8px;
+}
+.progress-bar {
+  height:4px; background:var(--dark4); border-radius:2px; margin-top:10px; overflow:hidden; display:none;
+}
+.progress-fill { height:100%; background:var(--gold); border-radius:2px; width:0%; transition:width 0.3s; }
+
+/* ════════════════════════════════════════
+   TOAST / NOTIFICATION
+════════════════════════════════════════ */
+#toast {
+  position:fixed; bottom:calc(var(--nav-h) + 16px); left:16px; right:16px; z-index:9999;
+  background:var(--dark3); border:1px solid var(--border); border-radius:12px;
+  padding:14px 16px; font-size:12px; color:var(--text);
+  transform:translateY(120%); transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  display:flex; align-items:center; gap:10px;
+}
+#toast.show { transform:translateY(0); }
+#toast.success { border-color:rgba(34,197,94,0.4); }
+#toast.error { border-color:rgba(239,68,68,0.4); }
+
+/* ════════════════════════════════════════
+   MODAL PERMIS DÉTAIL
+════════════════════════════════════════ */
+#modal-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:500;
+  display:none; align-items:flex-end;
+}
+#modal-overlay.show { display:flex; }
+#modal {
+  background:var(--dark2); border:1px solid var(--border); border-radius:20px 20px 0 0;
+  width:100%; max-height:80dvh; overflow-y:auto;
+  padding:20px; padding-bottom:calc(20px + var(--safe-bottom));
+  transform:translateY(100%); transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+#modal.show { transform:translateY(0); }
+.modal-handle { width:40px; height:4px; background:var(--dark4); border-radius:2px; margin:0 auto 20px; }
+.modal-title { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#fff; margin-bottom:4px; }
+.modal-subtitle { font-size:11px; color:var(--gold); letter-spacing:2px; margin-bottom:20px; }
+.modal-row { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
+.modal-row:last-of-type { border-bottom:none; }
+.modal-key { font-size:11px; color:var(--muted); }
+.modal-val { font-size:11px; color:var(--text); text-align:right; max-width:60%; }
+
+/* ════════════════════════════════════════
+   SPLASH SCREEN
+════════════════════════════════════════ */
+#splash {
+  position:fixed; inset:0; background:var(--dark); z-index:9999;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;
+}
+.splash-hex {
+  width:80px; height:80px; background:var(--gold);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  animation:splashPulse 1.5s ease-in-out infinite;
+}
+@keyframes splashPulse {
+  0%,100%{transform:scale(1); opacity:1}
+  50%{transform:scale(0.9); opacity:0.7}
+}
+.splash-title { font-family:'Syne',sans-serif; font-size:24px; font-weight:800; color:#fff; }
+.splash-sub { font-size:11px; color:var(--gold); letter-spacing:3px; text-transform:uppercase; }
+.splash-loading { width:120px; height:2px; background:var(--dark4); border-radius:1px; overflow:hidden; margin-top:8px; }
+.splash-bar { height:100%; background:var(--gold); border-radius:1px; animation:loadBar 2s ease-in-out forwards; }
+@keyframes loadBar { from{width:0%} to{width:100%} }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-hex"></div>
+  <div class="splash-title">MineCI</div>
+  <div class="splash-sub">Cadastre Minier</div>
+  <div class="splash-loading"><div class="splash-bar"></div></div>
+</div>
+
+<!-- APP -->
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="header-brand">
+      <div class="brand-hex">⬡</div>
+      <div class="brand-text">
+        <h1>MineCI</h1>
+        <span>Cadastre Minier CI</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="offline-badge" id="offline-badge">HORS-LIGNE</div>
+      <div class="sync-btn" id="sync-btn" onclick="syncData()" title="Actualiser">↻</div>
+    </div>
+  </div>
+
+  <!-- PAGES -->
+  <div id="pages">
+
+    <!-- ── PAGE ACCUEIL ── -->
+    <div class="page active" id="page-accueil">
+      <div class="page-content">
+
+        <div class="welcome-banner">
+          <div class="welcome-title">Bonjour 👋</div>
+          <div class="welcome-sub">Bienvenue sur le tableau de bord<br>du Cadastre Minier de Côte d'Ivoire</div>
+          <div class="welcome-date" id="welcome-date">Chargement...</div>
+        </div>
+
+        <div class="section-title">Indicateurs clés</div>
+        <div class="kpi-grid-mobile">
+          <div class="kpi-mobile">
+            <div class="kpi-m-icon">🔍</div>
+            <div class="kpi-m-val" id="kpi-r">142</div>
+            <div class="kpi-m-label">Recherche</div>
+            <div class="kpi-m-delta delta-up">↑ +12%</div>
+          </div>
+          <div class="kpi-mobile">
+            <div class="kpi-m-icon">⛏️</div>
+            <div class="kpi-m-val" id="kpi-e">67</div>
+            <div class="kpi-m-label">Exploitation</div>
+            <div class="kpi-m-delta delta-up">↑ +8%</div>
+          </div>
+          <div class="kpi-mobile">
+            <div class="kpi-m-icon">🪨</div>
+            <div class="kpi-m-val" id="kpi-a">318</div>
+            <div class="kpi-m-label">Artisanal</div>
+            <div class="kpi-m-delta delta-down">↑ +24%</div>
+          </div>
+          <div class="kpi-mobile">
+            <div class="kpi-m-icon">🛰️</div>
+            <div class="kpi-m-val" id="kpi-d">89</div>
+            <div class="kpi-m-label">Détections</div>
+            <div class="kpi-m-delta delta-down">↑ +31%</div>
+          </div>
+        </div>
+
+        <div class="section-title">⚠️ Alertes récentes</div>
+
+        <div class="alerte-card" onclick="showToast('📍 Zone chargée sur la carte', 'success'); navTo('carte')">
+          <div class="alerte-icon">🚨</div>
+          <div class="alerte-body">
+            <div class="alerte-title">Zone non autorisée — Est (Abengourou)</div>
+            <div class="alerte-desc">Perte NDVI de 0.47 détectée entre Jan–Jun 2024. Sol nu confirmé par Sentinel-2.</div>
+            <div class="alerte-meta">⚡ Il y a 2 jours · Delta NDVI ▼0.47</div>
+          </div>
+          <div class="alerte-badge">NOUVEAU</div>
+        </div>
+
+        <div class="alerte-card" onclick="showToast('📍 Zone chargée sur la carte', 'success'); navTo('carte')">
+          <div class="alerte-icon">⚠️</div>
+          <div class="alerte-body">
+            <div class="alerte-title">Activité suspecte — Sud (San Pedro)</div>
+            <div class="alerte-desc">Expansion rapide d'une zone d'orpaillage sur 1.9 km². Non référencée au cadastre.</div>
+            <div class="alerte-meta">📅 Il y a 5 jours · Delta NDVI ▼0.52</div>
+          </div>
+          <div class="alerte-badge">ALERTE</div>
+        </div>
+
+        <div class="alerte-card">
+          <div class="alerte-icon">ℹ️</div>
+          <div class="alerte-body">
+            <div class="alerte-title">Nouveau permis — Nord (Boundiali)</div>
+            <div class="alerte-desc">Permis de recherche accordé à Barrick Gold. Superficie : 89.2 km².</div>
+            <div class="alerte-meta">📅 Il y a 8 jours · Référence REC-CI-2024-047</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── PAGE CARTE ── -->
+    <div class="page" id="page-carte">
+      <div id="map-container">
+        <div id="map-controls">
+          <button class="map-filter-btn active" onclick="filtrerCarte('all', this)">Tous</button>
+          <button class="map-filter-btn" onclick="filtrerCarte('recherche', this)">🔍 Recherche</button>
+          <button class="map-filter-btn" onclick="filtrerCarte('exploitation', this)">⛏️ Exploitation</button>
+          <button class="map-filter-btn" onclick="filtrerCarte('artisanal', this)">🪨 Artisanal</button>
+          <button class="map-filter-btn" onclick="filtrerCarte('detection', this)">🛰️ GEE</button>
+        </div>
+        <div id="map"></div>
+        <div id="map-legend">
+          <div class="legend-row"><div class="legend-dot" style="background:#3B82F6"></div>Recherche</div>
+          <div class="legend-row"><div class="legend-dot" style="background:#D4A017"></div>Exploitation</div>
+          <div class="legend-row"><div class="legend-dot" style="background:#F97316"></div>Artisanal</div>
+          <div class="legend-row"><div class="legend-dot" style="background:#EF4444"></div>Détection GEE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE STATISTIQUES ── -->
+    <div class="page" id="page-stats">
+      <div class="page-content">
+
+        <div class="chart-card-mobile">
+          <div class="chart-card-title">Répartition des Permis</div>
+          <div class="chart-card-sub">Distribution par type · 2024</div>
+          <canvas id="chartDoughnut" height="200"></canvas>
+        </div>
+
+        <div class="chart-card-mobile">
+          <div class="chart-card-title">Évolution 2020–2024</div>
+          <div class="chart-card-sub">Nombre de permis actifs par année</div>
+          <canvas id="chartLine" height="200"></canvas>
+        </div>
+
+        <div class="chart-card-mobile">
+          <div class="chart-card-title">Comparaison NDVI 2023 vs 2024</div>
+          <div class="chart-card-sub">Indice de végétation par région — perte détectée</div>
+
+          <div id="ndvi-container">
+            <!-- Généré dynamiquement -->
+          </div>
+        </div>
+
+        <div class="chart-card-mobile">
+          <div class="chart-card-title">Substances Principales</div>
+          <div class="chart-card-sub">Ressources déclarées dans les permis</div>
+          <canvas id="chartBar" height="200"></canvas>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── PAGE PERMIS ── -->
+    <div class="page" id="page-permis">
+      <div class="page-content">
+
+        <div class="search-bar">
+          <span>🔎</span>
+          <input type="text" placeholder="Rechercher un permis, titulaire..." id="search-input" oninput="rechercherPermis(this.value)">
+        </div>
+
+        <div class="filter-scroll">
+          <div class="filter-chip active" onclick="filtrerPermis('all', this)">Tous</div>
+          <div class="filter-chip" onclick="filtrerPermis('recherche', this)">🔍 Recherche</div>
+          <div class="filter-chip" onclick="filtrerPermis('exploitation', this)">⛏️ Exploitation</div>
+          <div class="filter-chip" onclick="filtrerPermis('artisanal', this)">🪨 Artisanal</div>
+          <div class="filter-chip" onclick="filtrerPermis('detection', this)">🛰️ Détection GEE</div>
+        </div>
+
+        <div id="permis-list"></div>
+
+      </div>
+    </div>
+
+    <!-- ── PAGE TÉLÉCHARGEMENT ── -->
+    <div class="page" id="page-download">
+      <div class="page-content">
+
+        <div class="welcome-banner" style="margin-bottom:16px">
+          <div class="welcome-title">Télécharger les données</div>
+          <div class="welcome-sub">Exportez les permis en différents formats pour ArcGIS, QGIS ou Excel.</div>
+        </div>
+
+        <div class="section-title">Formats disponibles</div>
+
+        <div class="download-card">
+          <div class="dl-header">
+            <div class="dl-icon">🗺️</div>
+            <div>
+              <div class="dl-title">Shapefile (.shp)</div>
+              <div class="dl-sub">Compatible ArcGIS Pro, QGIS</div>
+            </div>
+          </div>
+          <div class="dl-info">
+            <div class="dl-tag">ESRI Shapefile</div>
+            <div class="dl-tag">WGS 84</div>
+            <div class="dl-tag">~2.4 Mo</div>
+          </div>
+          <button class="dl-btn" onclick="telecharger('shp')">⬇ Télécharger Shapefile</button>
+          <div class="progress-bar" id="prog-shp"><div class="progress-fill" id="fill-shp"></div></div>
+        </div>
+
+        <div class="download-card">
+          <div class="dl-header">
+            <div class="dl-icon">📋</div>
+            <div>
+              <div class="dl-title">GeoJSON (.json)</div>
+              <div class="dl-sub">Format universel, compatible web</div>
+            </div>
+          </div>
+          <div class="dl-info">
+            <div class="dl-tag">GeoJSON</div>
+            <div class="dl-tag">WGS 84</div>
+            <div class="dl-tag">~1.8 Mo</div>
+          </div>
+          <button class="dl-btn" onclick="telecharger('geojson')">⬇ Télécharger GeoJSON</button>
+          <div class="progress-bar" id="prog-geojson"><div class="progress-fill" id="fill-geojson"></div></div>
+        </div>
+
+        <div class="download-card">
+          <div class="dl-header">
+            <div class="dl-icon">📊</div>
+            <div>
+              <div class="dl-title">Excel (.xlsx)</div>
+              <div class="dl-sub">Tableau des attributs sans géométrie</div>
+            </div>
+          </div>
+          <div class="dl-info">
+            <div class="dl-tag">Excel</div>
+            <div class="dl-tag">UTF-8</div>
+            <div class="dl-tag">~0.5 Mo</div>
+          </div>
+          <button class="dl-btn" onclick="telecharger('xlsx')">⬇ Télécharger Excel</button>
+          <button class="dl-btn secondary" onclick="exporterCSV()">⬇ Télécharger CSV (immédiat)</button>
+          <div class="progress-bar" id="prog-xlsx"><div class="progress-fill" id="fill-xlsx"></div></div>
+        </div>
+
+        <div class="section-title" style="margin-top:8px">À propos des données</div>
+        <div class="download-card" style="padding:14px 18px">
+          <div style="font-size:11px; color:var(--muted); line-height:1.8">
+            <div>📡 Source : mines.gouv.ci.cadastreminier.org</div>
+            <div>🛰️ Détection : Sentinel-2 via Google Earth Engine</div>
+            <div>📅 Période : Janvier–Juin 2023 vs 2024</div>
+            <div>🌍 Projection : WGS 84 (EPSG:4326)</div>
+            <div style="margin-top:8px; color:var(--gold)">📋 Données officielles — Direction des Mines CI</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /pages -->
+
+  <!-- NAVIGATION -->
+  <nav id="nav">
+    <div class="nav-item active" id="nav-accueil" onclick="navTo('accueil')">
+      <div class="nav-icon">🏠</div>
+      <div class="nav-label">Accueil</div>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-carte" onclick="navTo('carte')">
+      <div class="nav-icon">🗺️</div>
+      <div class="nav-label">Carte</div>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-stats" onclick="navTo('stats')">
+      <div class="nav-icon">📊</div>
+      <div class="nav-label">Stats</div>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-permis" onclick="navTo('permis')">
+      <div class="nav-icon">📋</div>
+      <div class="nav-label">Permis</div>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-download" onclick="navTo('download')">
+      <div class="nav-icon">⬇️</div>
+      <div class="nav-label">Export</div>
+      <div class="nav-dot"></div>
+    </div>
+  </nav>
+
+</div><!-- /app -->
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- MODAL DÉTAIL PERMIS -->
+<div id="modal-overlay" onclick="fermerModal(event)">
+  <div id="modal">
+    <div class="modal-handle"></div>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  DONNÉES
+// ════════════════════════════════════════════════════════
+
+const PERMIS_DATA = [
+  { id:'EXP-CI-2024-001', type:'exploitation', titulaire:'Endeavour Mining', substance:'Or', region:'Hambol', superficie:124.5, statut:'Actif', delta:-0.21, lat:8.10, lng:-5.30 },
+  { id:'REC-CI-2024-047', type:'recherche',    titulaire:'Barrick Gold',     substance:'Or, Argent', region:'Gbêkê', superficie:89.2, statut:'Actif', delta:-0.09, lat:7.85, lng:-5.10 },
+  { id:'ART-CI-2024-112', type:'artisanal',    titulaire:'Coopérative Nord', substance:'Or', region:'Poro', superficie:12.8, statut:'Partiel', delta:-0.33, lat:9.45, lng:-6.10 },
+  { id:'GEE-CI-2024-003', type:'detection',    titulaire:'Non identifié',    substance:'Inconnu', region:'Indénié-Djuablin', superficie:3.4, statut:'Illégal?', delta:-0.47, lat:6.72, lng:-3.49 },
+  { id:'EXP-CI-2024-028', type:'exploitation', titulaire:'Perseus Mining',   substance:'Or', region:'Bafing', superficie:210.0, statut:'Actif', delta:-0.14, lat:7.60, lng:-7.80 },
+  { id:'REC-CI-2024-089', type:'recherche',    titulaire:'Montage Gold',     substance:'Or', region:'Tchologo', superficie:57.6, statut:'Actif', delta:0.02, lat:9.20, lng:-5.50 },
+  { id:'GEE-CI-2024-017', type:'detection',    titulaire:'Non identifié',    substance:'Inconnu', region:'San-Pédro', superficie:1.9, statut:'Illégal?', delta:-0.52, lat:4.75, lng:-6.63 },
+  { id:'ART-CI-2024-204', type:'artisanal',    titulaire:'Coopérative Ouest',substance:'Or, Diamant', region:'Tonkpi', superficie:8.3, statut:'Actif', delta:-0.18, lat:7.40, lng:-7.55 },
+  { id:'REC-CI-2024-033', type:'recherche',    titulaire:'Allied Gold',      substance:'Or', region:'Worodougou', superficie:143.2, statut:'Actif', delta:-0.11, lat:8.50, lng:-6.90 },
+  { id:'EXP-CI-2024-015', type:'exploitation', titulaire:'Newcrest Mining',  substance:'Or, Cuivre', region:'Hambol', superficie:178.4, statut:'Actif', delta:-0.19, lat:8.30, lng:-5.70 },
+];
+
+const NDVI_DATA = [
+  { region:'Nord (Boundiali)', v2023:0.72, v2024:0.58 },
+  { region:'Centre (Katiola)', v2023:0.64, v2024:0.51 },
+  { region:'Ouest (Man)',      v2023:0.81, v2024:0.74 },
+  { region:'Est (Abengourou)',  v2023:0.68, v2024:0.44 },
+  { region:'Sud (San Pedro)',   v2023:0.55, v2024:0.38 },
+];
+
+const COULEURS = {
+  recherche:'#3B82F6', exploitation:'#D4A017', artisanal:'#F97316', detection:'#EF4444'
+};
+
+let filtrePermisActif = 'all';
+let rechercheQuery   = '';
+let mapInstance      = null;
+let markersLayer     = null;
+
+// ════════════════════════════════════════════════════════
+//  NAVIGATION
+// ════════════════════════════════════════════════════════
+
+function navTo(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  document.getElementById(`nav-${page}`).classList.add('active');
+
+  if (page === 'carte' && !mapInstance) initCarte();
+  if (page === 'stats') initCharts();
+  if (page === 'permis') renderPermis();
+}
+
+// ════════════════════════════════════════════════════════
+//  CARTE LEAFLET
+// ════════════════════════════════════════════════════════
+
+function initCarte() {
+  mapInstance = L.map('map', {
+    center: [7.5, -5.5],
+    zoom: 7,
+    zoomControl: false,
+    attributionControl: true
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 18
+  }).addTo(mapInstance);
+
+  markersLayer = L.layerGroup().addTo(mapInstance);
+  afficherMarqueurs('all');
+  showToast('🗺️ Carte chargée — ' + PERMIS_DATA.length + ' permis', 'success');
+}
+
+function creerIcone(type) {
+  const couleur = COULEURS[type] || '#7A7060';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+    <circle cx="14" cy="14" r="10" fill="${couleur}" opacity="0.25"/>
+    <circle cx="14" cy="14" r="6" fill="${couleur}"/>
+    <circle cx="14" cy="14" r="3" fill="white"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg, className:'', iconSize:[28,28], iconAnchor:[14,14]
+  });
+}
+
+function afficherMarqueurs(filtre) {
+  markersLayer.clearLayers();
+  const data = filtre === 'all' ? PERMIS_DATA : PERMIS_DATA.filter(p => p.type === filtre);
+
+  data.forEach(p => {
+    const marker = L.marker([p.lat, p.lng], { icon: creerIcone(p.type) });
+    const badge = { recherche:'🔍 Recherche', exploitation:'⛏️ Exploitation', artisanal:'🪨 Artisanal', detection:'🛰️ Détection GEE' };
+    marker.bindPopup(`
+      <div style="min-width:180px">
+        <div style="font-size:10px;color:#D4A017;letter-spacing:2px;margin-bottom:6px">${badge[p.type] || p.type}</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px">${p.titulaire}</div>
+        <div style="font-size:11px;color:#71717A">📍 ${p.region}</div>
+        <div style="font-size:11px;color:#71717A">🪨 ${p.substance}</div>
+        <div style="font-size:11px;color:#71717A">📐 ${p.superficie} km²</div>
+        <div style="font-size:11px;margin-top:6px;color:${p.delta < -0.2 ? '#EF4444' : '#22C55E'}">
+          NDVI : ${p.delta > 0 ? '↑' : '↓'} ${Math.abs(p.delta).toFixed(2)}
+        </div>
+        <div style="font-size:10px;color:#71717A;margin-top:4px">${p.id}</div>
+      </div>
+    `);
+    markersLayer.addLayer(marker);
+  });
+}
+
+function filtrerCarte(type, btn) {
+  document.querySelectorAll('.map-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  afficherMarqueurs(type);
+}
+
+// ════════════════════════════════════════════════════════
+//  GRAPHIQUES
+// ════════════════════════════════════════════════════════
+
+let chartsInit = false;
+
+function initCharts() {
+  if (chartsInit) return;
+  chartsInit = true;
+
+  const opts = {
+    legend: { labels: { color:'#71717A', font:{ family:'Space Mono', size:10 }, padding:10, usePointStyle:true } }
+  };
+
+  // Donut
+  new Chart(document.getElementById('chartDoughnut'), {
+    type:'doughnut',
+    data:{
+      labels:['Exploitation','Recherche','Artisanal','Détection GEE'],
+      datasets:[{ data:[67,142,318,89],
+        backgroundColor:['#D4A017','#3B82F6','#F97316','#EF4444'],
+        borderColor:'#18181B', borderWidth:3, hoverOffset:6
+      }]
+    },
+    options:{ responsive:true, cutout:'68%', plugins:{ legend:{ ...opts.legend, position:'bottom' } } }
+  });
+
+  // Line
+  new Chart(document.getElementById('chartLine'), {
+    type:'line',
+    data:{
+      labels:['2020','2021','2022','2023','2024'],
+      datasets:[
+        { label:'Exploitation', data:[38,44,55,62,67], borderColor:'#D4A017', backgroundColor:'rgba(212,160,23,0.08)', tension:0.4, fill:true, pointRadius:3 },
+        { label:'Recherche',    data:[92,103,118,127,142], borderColor:'#3B82F6', backgroundColor:'rgba(59,130,246,0.06)', tension:0.4, fill:true, pointRadius:3 },
+        { label:'Artisanal',    data:[180,210,241,280,318], borderColor:'#F97316', backgroundColor:'rgba(249,115,22,0.06)', tension:0.4, fill:true, pointRadius:3 },
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{ legend:{ ...opts.legend, position:'bottom' } },
+      scales:{
+        x:{ grid:{ color:'rgba(212,160,23,0.06)' }, ticks:{ color:'#71717A', font:{ family:'Space Mono', size:9 } } },
+        y:{ grid:{ color:'rgba(212,160,23,0.06)' }, ticks:{ color:'#71717A', font:{ family:'Space Mono', size:9 } } }
+      }
+    }
+  });
+
+  // Barres NDVI
+  const ndviEl = document.getElementById('ndvi-container');
+  ndviEl.innerHTML = NDVI_DATA.map(r => {
+    const delta = (r.v2024 - r.v2023).toFixed(2);
+    const col23 = '#22C55E';
+    const col24 = r.v2024 < 0.5 ? '#EF4444' : r.v2024 < 0.65 ? '#F97316' : '#22C55E';
+    return `<div class="ndvi-section">
+      <div class="ndvi-region">
+        <span>${r.region}</span>
+        <span style="color:${parseFloat(delta)<0?'#EF4444':'#22C55E'}">${delta > 0?'↑':'↓'} ${Math.abs(parseFloat(delta)).toFixed(2)}</span>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+        <div style="font-size:9px;color:#71717A;width:30px">2023</div>
+        <div style="flex:1;height:16px;background:#27272A;border-radius:4px;overflow:hidden">
+          <div style="width:${r.v2023*100}%;height:100%;background:${col23};border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#000;font-weight:700">${r.v2023}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <div style="font-size:9px;color:#71717A;width:30px">2024</div>
+        <div style="flex:1;height:16px;background:#27272A;border-radius:4px;overflow:hidden">
+          <div style="width:${r.v2024*100}%;height:100%;background:${col24};border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700">${r.v2024}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Bar substances
+  new Chart(document.getElementById('chartBar'), {
+    type:'bar',
+    data:{
+      labels:['Or','Manganèse','Diamant','Nickel','Bauxite','Autres'],
+      datasets:[{ data:[58,14,9,7,6,6],
+        backgroundColor:'rgba(212,160,23,0.5)', borderColor:'#D4A017',
+        borderWidth:1, borderRadius:4
+      }]
+    },
+    options:{
+      responsive:true, indexAxis:'y',
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ grid:{ color:'rgba(212,160,23,0.06)' }, ticks:{ color:'#71717A', font:{ family:'Space Mono', size:9 } } },
+        y:{ grid:{ display:false }, ticks:{ color:'#71717A', font:{ family:'Space Mono', size:9 } } }
+      }
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════
+//  LISTE PERMIS
+// ════════════════════════════════════════════════════════
+
+function renderPermis() {
+  const list = document.getElementById('permis-list');
+  let data = PERMIS_DATA;
+
+  if (filtrePermisActif !== 'all')
+    data = data.filter(p => p.type === filtrePermisActif);
+  if (rechercheQuery)
+    data = data.filter(p =>
+      p.titulaire.toLowerCase().includes(rechercheQuery) ||
+      p.id.toLowerCase().includes(rechercheQuery) ||
+      p.region.toLowerCase().includes(rechercheQuery)
+    );
+
+  if (data.length === 0) {
+    list.innerHTML = `<div style="text-align:center;color:var(--muted);padding:40px;font-size:12px">Aucun permis trouvé</div>`;
+    return;
+  }
+
+  const BADGE = { recherche:'badge-r', exploitation:'badge-e', artisanal:'badge-a', detection:'badge-d' };
+  const LABEL = { recherche:'Recherche', exploitation:'Exploitation', artisanal:'Artisanal', detection:'Détection GEE' };
+
+  list.innerHTML = data.map(p => `
+    <div class="permis-card" onclick="ouvrirModal('${p.id}')">
+      <div class="permis-header">
+        <div class="permis-num">${p.id}</div>
+        <span class="permis-badge ${BADGE[p.type]}">${LABEL[p.type]}</span>
+      </div>
+      <div class="permis-titulaire">${p.titulaire}</div>
+      <div class="permis-meta">
+        <span>📍 ${p.region}</span>
+        <span>🪨 ${p.substance}</span>
+        <span>📐 ${p.superficie} km²</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;align-items:center">
+        <span style="font-size:10px;color:var(--muted)">${p.statut}</span>
+        <span class="permis-delta" style="color:${p.delta < -0.3 ? 'var(--red)' : p.delta < 0 ? 'var(--orange)' : 'var(--green)'}">
+          NDVI ${p.delta > 0 ? '↑' : '↓'} ${Math.abs(p.delta).toFixed(2)}
+        </span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filtrerPermis(type, el) {
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  filtrePermisActif = type;
+  renderPermis();
+}
+
+function rechercherPermis(val) {
+  rechercheQuery = val.toLowerCase();
+  renderPermis();
+}
+
+// ════════════════════════════════════════════════════════
+//  MODAL DÉTAIL
+// ════════════════════════════════════════════════════════
+
+function ouvrirModal(id) {
+  const p = PERMIS_DATA.find(x => x.id === id);
+  if (!p) return;
+
+  const LABEL = { recherche:'🔍 Recherche', exploitation:'⛏️ Exploitation', artisanal:'🪨 Artisanal', detection:'🛰️ Détection GEE' };
+
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">${p.titulaire}</div>
+    <div class="modal-subtitle">${LABEL[p.type]} · ${p.id}</div>
+    <div class="modal-row"><span class="modal-key">Région</span><span class="modal-val">${p.region}</span></div>
+    <div class="modal-row"><span class="modal-key">Substance</span><span class="modal-val">${p.substance}</span></div>
+    <div class="modal-row"><span class="modal-key">Superficie</span><span class="modal-val">${p.superficie} km²</span></div>
+    <div class="modal-row"><span class="modal-key">Statut</span><span class="modal-val">${p.statut}</span></div>
+    <div class="modal-row"><span class="modal-key">Delta NDVI</span><span class="modal-val" style="color:${p.delta < -0.3 ? 'var(--red)' : p.delta < 0 ? 'var(--orange)' : 'var(--green)'}">${p.delta > 0 ? '+' : ''}${p.delta.toFixed(2)}</span></div>
+    <div class="modal-row"><span class="modal-key">Coordonnées</span><span class="modal-val">${p.lat.toFixed(3)}°N ${p.lng.toFixed(3)}°E</span></div>
+    <div style="margin-top:16px">
+      <button class="dl-btn" onclick="fermerModal(); navTo('carte')" style="font-size:12px;padding:12px">
+        🗺️ Voir sur la carte
+      </button>
+    </div>
+  `;
+
+  document.getElementById('modal-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('modal').classList.add('show'), 10);
+}
+
+function fermerModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal').classList.remove('show');
+  setTimeout(() => document.getElementById('modal-overlay').classList.remove('show'), 300);
+}
+
+// ════════════════════════════════════════════════════════
+//  TÉLÉCHARGEMENT
+// ════════════════════════════════════════════════════════
+
+function telecharger(format) {
+  const prog = document.getElementById(`prog-${format}`);
+  const fill = document.getElementById(`fill-${format}`);
+  prog.style.display = 'block';
+  let w = 0;
+  const interval = setInterval(() => {
+    w += Math.random() * 15;
+    if (w >= 100) {
+      w = 100; clearInterval(interval);
+      showToast(`✅ ${format.toUpperCase()} prêt — connectez le serveur Python pour l'export réel`, 'success');
+      setTimeout(() => { prog.style.display='none'; fill.style.width='0%'; }, 3000);
+    }
+    fill.style.width = w + '%';
+  }, 150);
+}
+
+function exporterCSV() {
+  const headers = ['ID', 'Type', 'Titulaire', 'Substance', 'Région', 'Superficie_km2', 'Statut', 'Delta_NDVI', 'Lat', 'Lng'];
+  const rows = PERMIS_DATA.map(p =>
+    [p.id, p.type, `"${p.titulaire}"`, p.substance, p.region, p.superficie, p.statut, p.delta, p.lat, p.lng].join(',')
+  );
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url;
+  a.download = `cadastre_CI_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('✅ CSV téléchargé avec succès !', 'success');
+}
+
+// ════════════════════════════════════════════════════════
+//  SYNC / HORS-LIGNE
+// ════════════════════════════════════════════════════════
+
+function syncData() {
+  const btn = document.getElementById('sync-btn');
+  btn.classList.add('spinning');
+  showToast('🔄 Synchronisation en cours...', '');
+
+  // Simuler une requête réseau
+  setTimeout(() => {
+    btn.classList.remove('spinning');
+    if (navigator.onLine) {
+      showToast('✅ Données à jour — ' + new Date().toLocaleTimeString('fr-FR'), 'success');
+    } else {
+      showToast('⚠️ Hors-ligne — données en cache utilisées', 'error');
+    }
+  }, 2000);
+}
+
+// Détecter hors-ligne
+window.addEventListener('offline', () => {
+  document.getElementById('offline-badge').classList.add('show');
+  showToast('📵 Mode hors-ligne activé — données en cache', 'error');
+});
+window.addEventListener('online', () => {
+  document.getElementById('offline-badge').classList.remove('show');
+  showToast('✅ Connexion rétablie', 'success');
+  syncData();
+});
+
+// ════════════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════════════
+
+let toastTimeout;
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════
+
+function init() {
+  // Date d'aujourd'hui
+  const now = new Date();
+  document.getElementById('welcome-date').textContent =
+    `📅 ${now.toLocaleDateString('fr-FR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}`;
+
+  // Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log('[PWA] Service Worker enregistré'))
+      .catch(e => console.warn('[PWA] SW non enregistré :', e));
+  }
+
+  // Bannière installation PWA
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    setTimeout(() => showToast('📲 Installez MineCI sur votre téléphone : Menu → Ajouter à l\'écran d\'accueil', ''), 3000);
+  });
+
+  // Rendre la liste des permis
+  renderPermis();
+
+  // Masquer le splash
+  setTimeout(() => {
+    const splash = document.getElementById('splash');
+    splash.style.opacity = '0';
+    splash.style.transition = 'opacity 0.5s';
+    setTimeout(() => splash.style.display = 'none', 500);
+  }, 2200);
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
